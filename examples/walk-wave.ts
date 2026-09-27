@@ -7,6 +7,7 @@ import {
   Skeleton,
   evaluatePose,
   skinVertices,
+  solveTwoBoneIk,
   type SkinInfluence,
   type Vec3,
 } from '../src/index.js';
@@ -51,6 +52,27 @@ const handR = (p: typeof pose) => {
 };
 console.log('\nhand.R 世界位置  纯行走: [' + fmt(handR(pureWalk)) + ']  叠加挥手: [' + fmt(handR(pose)) + ']');
 
+// 在混合姿态之后执行右臂两骨骼 IK：spine -> arm.R -> hand.R。
+// 目标与弯曲参考点都是角色空间坐标；求解只改变 spine 和 arm.R 的局部旋转。
+const ikTarget: Vec3 = [0.52, 1.12, 0.2];
+const ikBendReference: Vec3 = [0.2, 1.65, 0.05];
+const ik = solveTwoBoneIk(skeleton, pose.localPose, {
+  rootJointId: 'spine',
+  middleJointId: 'arm.R',
+  endJointId: 'hand.R',
+  target: ikTarget,
+  bendReference: ikBendReference,
+  weight: 1,
+});
+const ikHand = (() => {
+  const e = ik.worldMatrices.get('hand.R')!.elements;
+  return [e[12], e[13], e[14]] as const;
+})();
+console.log('\n=== 右手 IK 贴合 ===');
+console.log('目标:       [' + fmt(ikTarget) + ']');
+console.log('IK 后末端: [' + fmt(ikHand) + ']');
+console.log('可达:', ik.reachable, ' 距离:', ik.distanceToTarget.toFixed(6));
+
 // 简单网格：右手一个顶点 + 脊柱处一个双骨骼顶点 + 零权重顶点。
 const vertices: Vec3[] = [
   [0.55, 1.35, 0],   // 右手绑定位置
@@ -63,7 +85,13 @@ const weights: SkinInfluence[][] = [
   [],
 ];
 const deformed = skinVertices(skeleton, vertices, weights, pose.worldMatrices);
+const ikDeformed = skinVertices(skeleton, vertices, weights, ik.worldMatrices);
 console.log('\n=== 蒙皮变形顶点（角色局部空间） ===');
 for (let i = 0; i < vertices.length; i++) {
-  console.log('v' + i, '绑定 [' + fmt(vertices[i]) + '] -> 变形 [' + fmt(deformed[i]) + ']');
+  console.log(
+    'v' + i,
+    '绑定 [' + fmt(vertices[i]) + ']',
+    '混合 [' + fmt(deformed[i]) + ']',
+    'IK [' + fmt(ikDeformed[i]) + ']',
+  );
 }

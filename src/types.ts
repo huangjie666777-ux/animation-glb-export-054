@@ -75,3 +75,36 @@ export interface SkinInfluence {
   /** 非负权重。 */
   readonly weight: number;
 }
+
+/** 两骨骼 IK 链：rootJoint -> middleJoint -> endJoint，必须直接相连。 */
+export interface TwoBoneIkChain {
+  readonly rootJointId: string;
+  readonly middleJointId: string;
+  readonly endJointId: string;
+}
+
+/** 两骨骼 IK 求解请求。坐标均为角色空间。 */
+export interface TwoBoneIkRequest extends TwoBoneIkChain {
+  /** 末端期望贴合的角色空间目标点。 */
+  readonly target: Vec3;
+  /** 弯曲参考点；中间关节会朝该点相对 root-target 方向的一侧弯曲。 */
+  readonly bendReference: Vec3;
+  /** 约束权重，0 保持原姿态，1 完整应用，中间值按最短弧插值。 */
+  readonly weight: number;
+}
+
+/** 两骨骼 IK 求解结果。 */
+export interface TwoBoneIkResult {
+  /** 应用约束后的完整局部姿态。 */
+  readonly localPose: Map<string, LocalTransform>;
+  /** 由求解后局部姿态重新生成的完整世界矩阵。 */
+  readonly worldMatrices: Map<string, import('three').Matrix4>;
+  /** 原始目标是否在两段骨骼的可达范围内。 */
+  readonly reachable: boolean;
+  /** 应用当前权重后，实际末端位置到原始目标点的距离。 */
+  readonly distanceToTarget: number;
+  /** 应用当前权重后的末端实际角色空间位置。 */
+  readonly actualEndPosition: Vec3;
+  /** 满权重求解时夹取后的可达目标点。 */
+  readonly clampedTarget: Vec3;
+}
