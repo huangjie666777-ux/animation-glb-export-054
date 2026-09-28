@@ -131,6 +131,8 @@ export function solveTwoBoneIk(
   const target = new Vector3(...request.target);
   const bend = new Vector3(...request.bendReference);
 
+  const rawDistance = target.distanceTo(rootPos);
+  const targetOnRoot = rawDistance < AXIS_EPSILON;
   const rootToEnd = endPos.clone().sub(rootPos);
   const rootToMiddle = middlePos.clone().sub(rootPos);
   let endDir = target.clone().sub(rootPos);
@@ -139,13 +141,20 @@ export function solveTwoBoneIk(
   }
   endDir.normalize();
 
-  let bendSide = perpendicularContribution(rootPos, bend, endDir)
-    ?? perpendicularContribution(rootPos, middlePos, endDir)
-    ?? perpendicularContribution(middlePos, endPos, endDir)
-    ?? stablePerpendicular(endDir);
+  // 目标与根重合时无法由目标定义新弯曲方向，必须优先沿用当前弯曲平面：
+  // 用当前中间关节相对 root->end 轴的侧向分量，忽略参考点；共线时再退化。
+  let bendSide: Vector3 | null = null;
+  if (targetOnRoot) {
+    bendSide = perpendicularContribution(rootPos, middlePos, endDir)
+      ?? perpendicularContribution(middlePos, endPos, endDir);
+  } else {
+    bendSide = perpendicularContribution(rootPos, bend, endDir)
+      ?? perpendicularContribution(rootPos, middlePos, endDir)
+      ?? perpendicularContribution(middlePos, endPos, endDir);
+  }
+  bendSide = bendSide ?? stablePerpendicular(endDir);
   bendSide = bendSide.normalize();
 
-  const rawDistance = target.distanceTo(rootPos);
   const minReach = Math.abs(length1 - length2);
   const maxReach = length1 + length2;
   const reachable = rawDistance <= maxReach + UNIT_SCALE_TOLERANCE

@@ -125,6 +125,31 @@ test('权重 0 保持原姿态，中间权重连续应用，重复调用稳定',
   assert.deepEqual(again.actualEndPosition, half.actualEndPosition);
 });
 
+test('目标与根重合时优先沿用当前弯曲平面，忽略参考点', () => {
+  // 当前链 root(0,0) -> mid(1,0) -> end(1,1)；目标与根重合时
+  // endDir 退化为 root->end，中间关节相对该轴的侧向为 (1,-1) 一侧。
+  // 参考点故意取相反侧向 (-1,1)，修复后应被忽略。
+  const bones = [
+    { id: 'end', parentId: 'mid', translation: [0, 1, 0] as const, rotation: [0, 0, 0, 1] as const, scale: [1, 1, 1] as const },
+    { id: 'mid', parentId: 'root', translation: [1, 0, 0] as const, rotation: [0, 0, 0, 1] as const, scale: [1, 1, 1] as const },
+    { id: 'root', parentId: null, translation: [0, 0, 0] as const, rotation: [0, 0, 0, 1] as const, scale: [1, 1, 1] as const },
+  ];
+  const chainSk = new Skeleton(bones);
+  const pose = new Map<string, LocalTransform>();
+  for (const id of ['root', 'mid', 'end']) pose.set(id, chainSk.bindLocalTransform(id));
+  const result = solveTwoBoneIk(chainSk, pose, {
+    rootJointId: 'root',
+    middleJointId: 'mid',
+    endJointId: 'end',
+    target: [0, 0, 0],
+    bendReference: [-100, 100, 0], // 与当前侧向相反，应被忽略
+    weight: 1,
+  });
+  const midPos = worldPosition(result.worldMatrices, 'mid');
+  const side = new Vector3(1, -1, 0).normalize();
+  assert.ok(midPos.dot(side) > 0.99); // 中点保持在当前弯曲平面的 (1,-1) 侧向
+});
+
 test('IK 结果可直接送入 CPU 蒙皮且多角色互不污染', () => {
   const inputA = basePose();
   const inputB = basePose();

@@ -8,7 +8,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "tsc -p tsconfig.test.json && node --test \"dist-test/test/*.test.js\"",
-    "example": "tsc -p tsconfig.test.json && node dist-test/examples/walk-wave.js"
+    "example": "tsc -p tsconfig.test.json && node dist-test/examples/walk-wave.js",
+    "example:target": "tsc -p tsconfig.test.json && node dist-test/examples/walk-target.js"
   },
   "dependencies": {
     "three": "0.180.0"

@@ -99,3 +99,39 @@ export function waveClip(): AnimationClip {
     ],
   };
 }
+
+/**
+ * 根运动行走：顶层根 hips 每圈沿 +X 推进 0.4 并保持 y=1（可无缝循环），
+ * 双腿绕 Z 反向摆动。首末根旋转相同，整圈运动为纯平移刚体。
+ */
+export function rootMotionWalkClip(): AnimationClip {
+  return {
+    name: 'root-walk',
+    duration: 1,
+    tracks: [
+      {
+        boneId: 'hips',
+        translations: [
+          { time: 0, value: [0, 1, 0] },
+          { time: 1, value: [0.4, 1, 0] },
+        ],
+      },
+      {
+        boneId: 'leg.L',
+        rotations: [
+          { time: 0, value: quatZ(0.4) },
+          { time: 0.5, value: quatZ(-0.4) },
+          { time: 1, value: quatZ(0.4) },
+        ],
+      },
+      {
+        boneId: 'leg.R',
+        rotations: [
+          { time: 0, value: quatZ(-0.4) },
+          { time: 0.5, value: quatZ(0.4) },
+          { time: 1, value: quatZ(-0.4) },
+        ],
+      },
+    ],
+  };
+}

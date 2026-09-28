@@ -108,3 +108,69 @@ export interface TwoBoneIkResult {
   /** 满权重求解时夹取后的可达目标点。 */
   readonly clampedTarget: Vec3;
 }
+
+/** 刚体变换：仅平移与单位四元数旋转（缩放恒为单位 1）。 */
+export interface RigidTransform {
+  readonly translation: Vec3;
+  readonly rotation: Quat;
+}
+
+/** 根运动播放实例的覆盖层参数；采样时间自动与播放实例同步。 */
+export interface PlaybackOverlay {
+  readonly clip: AnimationClip;
+  /** 覆盖强度，[0, 1]。 */
+  readonly strength: number;
+  /** 覆盖层播放模式，缺省与基础层一致。 */
+  readonly loop?: LoopMode;
+  /**
+   * 骨骼遮罩权重（[0, 1]）。顶层根骨骼恒为 0：
+   * 覆盖层可影响其他骨骼，但不能改变根或贡献根运动。
+   */
+  readonly mask?: Readonly<Record<string, number>>;
+}
+
+/** 根运动播放实例单帧求值结果。 */
+export interface PlaybackFrame {
+  /** 当前角色刚体变换（世界空间）。 */
+  readonly character: RigidTransform;
+  /** 由 character 组合出的角色世界矩阵（单位缩放）。 */
+  readonly characterMatrix: import('three').Matrix4;
+  /** 根被钉在片段起始变换后的完整局部姿态。 */
+  readonly localPose: Map<string, LocalTransform>;
+  /** 角色空间骨骼矩阵（由局部姿态按层级累乘）。 */
+  readonly worldMatrices: Map<string, import('three').Matrix4>;
+  /** 累计播放时间（秒，loop 下可超过片段时长）。 */
+  readonly time: number;
+  /** 映射到片段内的采样时间（秒）。 */
+  readonly clipTime: number;
+  /** once 模式下是否已停在末帧。 */
+  readonly finished: boolean;
+}
+
+/** 世界空间两骨骼 IK 请求；坐标均为世界空间。 */
+export interface WorldTwoBoneIkRequest extends TwoBoneIkChain {
+  /** 末端期望贴合的世界目标点。 */
+  readonly worldTarget: Vec3;
+  /** 世界空间弯曲参考点。 */
+  readonly worldBendReference: Vec3;
+  /** 当前角色世界刚体矩阵（仅允许单位缩放）。 */
+  readonly characterMatrix: import('three').Matrix4;
+  /** 约束权重，0 保持原姿态，1 完整应用。 */
+  readonly weight: number;
+}
+
+/** 世界空间两骨骼 IK 结果。 */
+export interface WorldTwoBoneIkResult {
+  /** 应用约束后的完整局部姿态（角色空间）。 */
+  readonly localPose: Map<string, LocalTransform>;
+  /** 求解后角色空间骨骼矩阵。 */
+  readonly worldMatrices: Map<string, import('three').Matrix4>;
+  /** 世界末端实际位置。 */
+  readonly worldEndPosition: Vec3;
+  /** 角色空间末端实际位置。 */
+  readonly actualEndPosition: Vec3;
+  /** 原始世界目标是否可达。 */
+  readonly reachable: boolean;
+  /** 世界末端到世界目标的距离。 */
+  readonly distanceToTarget: number;
+}
