@@ -1,13 +1,13 @@
 import type {
   AnimationClip,
+  LocalTransform,
   LoopMode,
-  OverlayLayer,
   PlaybackFrame,
   PlaybackOverlay,
   RigidTransform,
 } from './types.js';
 import { Skeleton, computeWorldMatrices } from './skeleton.js';
-import { evaluatePose } from './pose.js';
+import { blendLocalPoses, resolveMaskWeights, sampleClip } from './pose.js';
 import { RootMotion, composeRigid, rigidToMatrix } from './root-motion.js';
 
 function assertRigid(t: RigidTransform, what: string): void {
@@ -102,29 +102,40 @@ export class RootMotionPlayer {
     const accumulated = this.motion.accumulate(nextElapsed, mode);
 
     // 先构造并校验覆盖层（失败时下面不会提交 elapsed）。
-    let overlayLayer: OverlayLayer | undefined;
+    let overlayLocalPose: Map<string, LocalTransform> | undefined;
     if (overlay) {
       if (!overlay.clip) throw new Error('覆盖层缺少片段');
       if (!Number.isFinite(overlay.strength) || overlay.strength < 0 || overlay.strength > 1) {
         throw new Error('覆盖强度必须在 [0, 1]: ' + String(overlay.strength));
       }
-      // 顶层根权重恒为 0：即使提供遮罩也不能覆盖根。
-      const mask = { ...(overlay.mask ?? {}) };
-      mask[this.rootBoneId] = 0;
-      overlayLayer = {
-        clip: overlay.clip,
-        time: nextElapsed,
-        loop: overlay.loop ?? mode,
-        strength: overlay.strength,
-        mask,
-      };
+      // 顶层根本身权重恒为 0，但不能在遮罩继承解析前把根写成 0：
+      // 未显式指定权重的后代需要从（被遮罩的）祖先继承，直接改遮罩会
+      // 误清空整条后代链。这里先按原遮罩解析继承权重，再仅把根自身置 0，
+      // 然后在局部空间完成与基础姿态相同的分层求值。
+      const maskWeights = overlay.mask
+        ? resolveMaskWeights(this.skeleton, overlay.mask)
+        : new Map(this.skeleton.boneIds.map((id) => [id, 1]));
+      maskWeights.set(this.rootBoneId, 0);
+      const overlayPose = sampleClip(
+        overlay.clip,
+        this.skeleton,
+        nextElapsed,
+        overlay.loop ?? mode,
+      );
+      const basePose = sampleClip(this.motion.clip, this.skeleton, nextElapsed, mode);
+      const weights = new Map<string, number>();
+      for (const id of this.skeleton.boneIds) {
+        weights.set(id, overlay.strength * (maskWeights.get(id) ?? 0));
+      }
+      overlayLocalPose = blendLocalPoses(basePose, overlayPose, weights);
     }
 
-    const pose = evaluatePose(
-      this.skeleton,
-      { clip: this.motion.clip, time: nextElapsed, loop: mode },
-      overlayLayer,
-    );
+    const localPose = overlayLocalPose
+      ?? sampleClip(this.motion.clip, this.skeleton, nextElapsed, mode);
+    const pose = {
+      localPose,
+      worldMatrices: computeWorldMatrices(this.skeleton, localPose),
+    };
     // 把根钉回片段起始变换：根运动只作用于角色变换，避免双重运动。
     pose.localPose.set(this.rootBoneId, { ...this.motion.startLocal });
     const worldMatrices = computeWorldMatrices(this.skeleton, pose.localPose);

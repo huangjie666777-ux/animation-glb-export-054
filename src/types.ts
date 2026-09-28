@@ -174,3 +174,32 @@ export interface WorldTwoBoneIkResult {
   /** 世界末端到世界目标的距离。 */
   readonly distanceToTarget: number;
 }
+
+/** 单根骨骼映射条目：源骨骼 ID 一一对应到目标骨骼 ID。 */
+export interface RetargetBoneMapping {
+  readonly sourceBoneId: string;
+  readonly targetBoneId: string;
+}
+
+/** 构造动作重定向可复用计划的参数。 */
+export interface RetargetPlanOptions {
+  readonly source: import('./skeleton.js').Skeleton;
+  readonly target: import('./skeleton.js').Skeleton;
+  /**
+   * 根相对应的一一骨骼映射：必须包含两侧的顶层根，且保持祖先/后代次序。
+   * 目标允许插入未映射的中间骨（映射骨之间可隔着目标独有骨骼）。
+   */
+  readonly mapping: readonly RetargetBoneMapping[];
+}
+
+/** 把源当前姿态烘焙为目标片段的参数。 */
+export interface RetargetBakeOptions {
+  /** 严格递增的采样时刻；必须从 0 开始并以源片段时长结束（含两端）。 */
+  readonly sampleTimes: readonly number[];
+  /** 根位移倍率（有限正数）；缺省 1。 */
+  readonly rootTranslationScale?: number;
+  /** 目标片段名称；缺省在源片段名后加 -retarget 后缀。 */
+  readonly name?: string;
+  /** 源片段循环模式；缺省 'loop'。仅影响采样时刻的解释。 */
+  readonly loop?: LoopMode;
+}

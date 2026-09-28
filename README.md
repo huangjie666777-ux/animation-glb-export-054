@@ -1,6 +1,6 @@
 # Skeletal Animation 038
 
-TypeScript 5.8 + Three.js 0.180 的可复用骨骼动画库：分层混合（基础层 + 遮罩覆盖层）、根运动播放实例（循环行走推进角色）、混合后两骨骼 IK（角色空间与世界固定目标）末端贴合与 CPU 线性蒙皮（角色/世界输出）。
+TypeScript 5.8 + Three.js 0.180 的可复用骨骼动画库：分层混合（基础层 + 遮罩覆盖层）、根运动播放实例（循环行走推进角色）、混合后两骨骼 IK（角色空间与世界固定目标）末端贴合、CPU 线性蒙皮（角色/世界输出），以及跨骨架**动作重定向**（不同骨名、绑定朝向、骨长复用同一动作，目标可插入未映射中间骨）。
 
 ## 命令
 
@@ -8,6 +8,7 @@ TypeScript 5.8 + Three.js 0.180 的可复用骨骼动画库：分层混合（基
 - `npm test` — 编译并运行全部单元测试
 - `npm run example` — 运行“行走 + 局部挥手 + 右手 IK 贴合”示例，打印混合姿态、IK 结果与变形顶点
 - `npm run example:target` — 运行“循环根运动行走 + 手部贴合固定世界目标 + 世界蒙皮”完整示例
+- `npm run example:retarget` — 运行“源片段重定向到异构目标骨架 + 根运动播放 + 世界 IK + 世界蒙皮”完整示例
 
 ## 数据约定
 
@@ -20,9 +21,13 @@ TypeScript 5.8 + Three.js 0.180 的可复用骨骼动画库：分层混合（基
 - **两骨骼 IK**（`solveTwoBoneIk`）：接收完整局部姿态与直接相连的 `rootJoint -> middleJoint -> endJoint`，在混合姿态后修改根关节和中间关节的局部旋转。目标点与弯曲参考点均为角色空间；局部平移、缩放、骨段长度、末端局部姿态及其余关节保持不变。IK 链及其祖先仅支持单位缩放，骨段平移长度必须非零。
 - **IK 夹取与权重**：目标过远/过近时，沿根关节到目标方向夹到两段长度确定的最近可达位置；结果返回 `reachable`、`distanceToTarget`、`actualEndPosition` 和 `clampedTarget`。目标与根重合或弯曲方向共线时优先使用当前弯曲平面，再退化到确定性参考轴。`weight=0` 保持原姿态，`weight=1` 完整贴合，中间值对输入/求解旋转做最短弧插值。
 - **根运动**（`RootMotion` / `RootMotionPlayer`）：从基础片段提取指定**顶层根骨骼**（`parentId === null`）的平移与旋转，以片段起始根变换 M0 为参考，任意时刻的相对运动为 `M(t)·M0⁻¹`（刚体矩阵顺序复合，不直接相加位移，也不夹带绑定位置）。`loop` 跨圈时按 `Kⁿ·D(r)` 复合：整圈运动 K 复合 n 次再乘余段 D(r)，包含末帧；分步推进与一次推进到同一时刻结果一致；`once` 到末帧后不再移动。根及角色仅支持单位缩放（绑定与片段缩放关键帧均校验）。
-- **播放实例**（`RootMotionPlayer.advance(dt, overlay?)`）：实例持有骨架、基础片段、根骨骼、播放模式与初始角色刚体变换，以非负有限时间增量推进；非法增量或覆盖层参数抛错且**不推进状态**。返回角色刚体变换（`character` / `characterMatrix`）、完整局部姿态与角色空间骨骼矩阵（`worldMatrices`）。根运动只作用于角色变换，姿态中的根始终钉回片段起始变换，避免双重运动；覆盖层根权重恒为 0，可影响其他骨骼但不能改变根或贡献根运动（旧 `evaluatePose` 接口保持不变）。
+- **播放实例**（`RootMotionPlayer.advance(dt, overlay?)`）：实例持有骨架、基础片段、根骨骼、播放模式与初始角色刚体变换，以非负有限时间增量推进；非法增量或覆盖层参数抛错且**不推进状态**。返回角色刚体变换（`character` / `characterMatrix`）、完整局部姿态与角色空间骨骼矩阵（`worldMatrices`）。根运动只作用于角色变换，姿态中的根始终钉回片段起始变换，避免双重运动；覆盖层根权重恒为 0，可影响其他骨骼但不能改变根或贡献根运动（旧 `evaluatePose` 接口保持不变）。屏蔽根时仅置零根自身权重，不会误清空后代从遮罩祖先继承的权重（该缺陷已修复）。
 - **世界 IK**（`solveWorldTwoBoneIk`）：世界目标与弯曲参考点经当前角色刚体矩阵的逆变换转入角色空间后复用 `solveTwoBoneIk`，再把末端变换回世界，返回世界末端位置、可达性与残差。角色矩阵仅允许单位缩放；目标与根重合时优先沿用当前弯曲平面。
 - **蒙皮**（`skinVertices` / `skinVerticesToWorld`）：输入绑定姿态顶点与每顶点至多 4 个骨骼权重；非负权重归一化后做线性混合蒙皮。前者输出角色局部空间位置，后者在角色空间蒙皮后对每个顶点只施加**一次**角色矩阵得到世界坐标，不会把角色世界矩阵重复乘入骨骼矩阵。零总权重顶点保持原位置；未知骨骼与负权重抛错。不修改任何输入，输入与已返回结果不会被后续推进改写，多实例互不共享状态。
+- **动作重定向**（`RetargetPlan` / `retargetPose` / `bakeRetargetedClip`）：`RetargetPlan` 接收源骨架、目标骨架与根相对应的一一骨骼映射（`{sourceBoneId, targetBoneId}`），校验双方均为单根、绑定单位缩放、相同坐标轴约定，映射不含未知骨/重复骨、必须包含双方顶层根且保持祖先/后代次序；目标允许在映射骨之间插入未映射中间骨。计划可重复使用，构造与转换均不改写输入。
+  - 姿态转换：映射骨的旋转差为「源当前全局旋转 × 源绑定全局旋转⁻¹」，再左乘目标绑定全局旋转得到目标当前全局旋转，按目标当前父全局旋转还原局部旋转；因此源绑定姿态必定映成目标绑定姿态，且目标自身的绑定朝向偏移被保留。未映射骨保留目标绑定局部旋转，但按目标求值顺序继承已运动父级的全局旋转。非根平移与缩放恒保留目标绑定值（目标骨长不变）。
+  - 根运动：根旋转同样按映射规则转换；根平移 = 目标绑定根位置 +（源当前根位置 − 源绑定根位置）× `rootTranslationScale`（有限正倍率，缺省 1），根缩放保留目标绑定值。`retargetPose` 返回全新 `Map`，后续转换不会改写先前结果。
+  - 片段烘焙：`bakeRetargetedClip(plan, sourceClip, { sampleTimes, rootTranslationScale, name })` 按调用方给定的**严格递增**采样时刻烘焙，时刻必须从 0 开始并以源片段时长结束（含两端）；终点按末帧直接采样，不会折回首帧。输出片段时长与源相同，轨道使用目标骨 ID（映射骨旋转轨道 + 根平移轨道，无非根平移/缩放轨道），采样点姿态与逐点 `retargetPose` 完全一致，可直接交给现有 `RootMotionPlayer` 播放根运动。
 
 ## 快速上手
 
@@ -76,6 +81,39 @@ for (const dt of [0.1, 0.1 /* ... */]) {
 
 完整可运行示例见 `examples/walk-wave.ts` 与 `examples/walk-target.ts`，测试用骨架/片段见 `test/helpers.ts`。
 
+动作重定向到骨名、绑定朝向、骨长均不同的目标骨架，烘焙后播放并叠加世界 IK/蒙皮：
+
+```ts
+import {
+  Skeleton, RetargetPlan, bakeRetargetedClip, RootMotionPlayer,
+  solveWorldTwoBoneIk, skinVerticesToWorld, retargetPose,
+} from './dist/index.js';
+
+const plan = new RetargetPlan({
+  source: sourceSkeleton,
+  target: targetSkeleton, // 可含未映射中间骨
+  mapping: [
+    { sourceBoneId: 'hips', targetBoneId: 'j_hips' },
+    { sourceBoneId: 'spine', targetBoneId: 'j_spine' },
+    // ...一一对应，必须含双方根
+  ],
+});
+
+// 逐帧直接转换（例如交互/运行时重定向）。
+const targetPose = retargetPose(plan, sourcePose, 0.75);
+
+// 或烘焙为目标片段，时长不变，可直接交给现有根运动播放器。
+const targetClip = bakeRetargetedClip(plan, sourceClip, {
+  sampleTimes: [0, 0.25, 0.5, 0.75, 1], // 严格递增、含 0 与 duration
+  rootTranslationScale: 0.75,
+});
+const player = new RootMotionPlayer({
+  skeleton: targetSkeleton, clip: targetClip, rootBoneId: 'j_hips', mode: 'loop',
+});
+```
+
+完整示例见 `examples/retarget.ts`（`npm run example:retarget`）。
+
 ## 目录
 
 - `src/types.ts` — 公共类型
@@ -88,4 +126,7 @@ for (const dt of [0.1, 0.1 /* ... */]) {
 - `src/world-ik.ts` — 世界目标/弯曲参考点的角色空间适配
 - `src/skinning.ts` — CPU 线性混合蒙皮
 - `src/world-skin.ts` — 蒙皮结果到世界顶点（角色矩阵只应用一次）
+- `src/retarget-plan.ts` — 重定向计划：映射/骨架校验与绑定全局旋转预计算
+- `src/retarget-pose.ts` — 完整源局部姿态到完整目标局部姿态的层级转换
+- `src/retarget-clip.ts` — 源片段按指定时刻烘焙为目标 `AnimationClip`
 - `src/index.ts` — 统一导出入口
