@@ -1,6 +1,6 @@
 # Skeletal Animation 038
 
-TypeScript 5.8 + Three.js 0.180 的可复用骨骼动画库：分层混合（基础层 + 遮罩覆盖层）、根运动播放实例（循环行走推进角色）、混合后两骨骼 IK（角色空间与世界固定目标）末端贴合、CPU 线性蒙皮（角色/世界输出），以及跨骨架**动作重定向**（不同骨名、绑定朝向、骨长复用同一动作，目标可插入未映射中间骨）。
+TypeScript 5.8 + Three.js 0.180 的可复用骨骼动画库：分层混合（基础层 + 遮罩覆盖层）、根运动播放实例（循环行走推进角色）、混合后两骨骼 IK（角色空间与世界固定目标）末端贴合、CPU 线性蒙皮（角色/世界输出）、跨骨架**动作重定向**（不同骨名、绑定朝向、骨长复用同一动作，目标可插入未映射中间骨），以及自包含 glTF 2.0 **GLB 资产导出**。
 
 ## 命令
 
@@ -28,6 +28,8 @@ TypeScript 5.8 + Three.js 0.180 的可复用骨骼动画库：分层混合（基
   - 姿态转换：映射骨的旋转差为「源当前全局旋转 × 源绑定全局旋转⁻¹」，再左乘目标绑定全局旋转得到目标当前全局旋转，按目标当前父全局旋转还原局部旋转；因此源绑定姿态必定映成目标绑定姿态，且目标自身的绑定朝向偏移被保留。未映射骨保留目标绑定局部旋转，但按目标求值顺序继承已运动父级的全局旋转。非根平移与缩放恒保留目标绑定值（目标骨长不变）。
   - 根运动：根旋转同样按映射规则转换；根平移 = 目标绑定根位置 +（源当前根位置 − 源绑定根位置）× `rootTranslationScale`（有限正倍率，缺省 1），根缩放保留目标绑定值。`retargetPose` 返回全新 `Map`，后续转换不会改写先前结果。
   - 片段烘焙：`bakeRetargetedClip(plan, sourceClip, { sampleTimes, rootTranslationScale, name })` 按调用方给定的**严格递增**采样时刻烘焙，时刻必须从 0 开始并以源片段时长结束（含两端）；终点按末帧直接采样，不会折回首帧。输出片段时长与源相同，轨道使用目标骨 ID（映射骨旋转轨道 + 根平移轨道，无非根平移/缩放轨道），采样点姿态与逐点 `retargetPose` 完全一致，可直接交给现有 `RootMotionPlayer` 播放根运动。
+- **GLB 导出**（`exportCharacterGlb`）：接收一个单根 `Skeleton`、一个绑定姿态角色空间 `TriangleMesh` 与多个既有 `AnimationClip`，返回内存中的 GLB `ArrayBuffer`。GLB 使用 glTF 2.0、单个内嵌 BIN 缓冲，无外部 `uri` 引用；无需材质、贴图、法线或相机。节点按骨架求值顺序排列，完整保留乱序输入骨骼的父子层级和绑定局部 TRS；`skin.joints`、逆绑定矩阵、`JOINTS_0`/`WEIGHTS_0` 使用相同关节序号。每顶点最多 4 个影响，导出前校验未知骨、负权重、零总权重、非有限顶点/权重和越界三角索引，权重在复制出的四槽数据中归一化，不修改调用方输入。
+- **导出动画语义**：每个输入片段生成同名 glTF animation，导出平移、旋转和缩放三类局部节点通道，sampler 均为 `LINEAR`；Three.js 的 `QuaternionKeyframeTrack` 对旋转执行最短弧 SLERP。通道关键帧未覆盖 0 或片段时长时自动在首尾延续端值；缺失通道不写入，由 glTF 节点绑定值表达。输入轨道终点保留原末帧，不折回零或首帧。重定向片段中的根位移只作为普通根节点局部平移导出一次，不叠加 `RootMotionPlayer` 的角色世界位移。
 
 ## 快速上手
 
@@ -114,6 +116,24 @@ const player = new RootMotionPlayer({
 
 完整示例见 `examples/retarget.ts`（`npm run example:retarget`）。
 
+把转换后的目标骨架、绑定网格和多个烘焙片段打包给 Blender、Maya、Unity、Unreal 等支持 glTF 2.0 的工具：
+
+```ts
+import { exportCharacterGlb, type TriangleMesh } from './dist/index.js';
+
+const mesh: TriangleMesh = {
+  name: 'retarget-character',
+  positions: bindSpaceVertices, // Vec3[]
+  indices: triangleIndices,      // number[]，长度为 3 的倍数
+  weights: perVertexWeights,      // SkinInfluence[][]，每顶点 1–4 个影响
+};
+
+const glb = exportCharacterGlb(targetSkeleton, mesh, [idleClip, walkClip, waveClip]);
+await fs.writeFile('character.glb', Buffer.from(glb));
+```
+
+`examples/retarget.ts` 会复用 `bakeRetargetedClip` 的目标片段导出 GLB，再用 Three.js `GLTFLoader` 解析、`AnimationMixer` 播放，并把加载后的蒙皮矩阵结果与本库 `sampleClip`/`skinVertices` 在同一时刻对比。
+
 ## 目录
 
 - `src/types.ts` — 公共类型
@@ -129,4 +149,7 @@ const player = new RootMotionPlayer({
 - `src/retarget-plan.ts` — 重定向计划：映射/骨架校验与绑定全局旋转预计算
 - `src/retarget-pose.ts` — 完整源局部姿态到完整目标局部姿态的层级转换
 - `src/retarget-clip.ts` — 源片段按指定时刻烘焙为目标 `AnimationClip`
+- `src/gltf-mesh.ts` — 网格/三角索引/四影响权重校验与 glTF 适配
+- `src/gltf-animation.ts` — 库片段到 glTF 局部 TRS 通道转换及首尾端值延续
+- `src/glb-encoder.ts` — 访问器、bufferView、节点、skin、animation 与 GLB 二进制分块编码
 - `src/index.ts` — 统一导出入口

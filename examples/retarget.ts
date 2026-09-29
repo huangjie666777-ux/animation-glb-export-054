@@ -6,7 +6,8 @@
  *
  * 运行：npm run example:retarget
  */
-import { Vector3 } from 'three';
+import { AnimationMixer, Matrix4, Vector3 } from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import {
   Skeleton,
   RetargetPlan,
@@ -14,6 +15,10 @@ import {
   RootMotionPlayer,
   solveWorldTwoBoneIk,
   skinVerticesToWorld,
+  exportCharacterGlb,
+  sampleClip,
+  computeWorldMatrices,
+  skinVertices,
   type BoneSpec,
   type SkinInfluence,
   type Vec3,
@@ -125,4 +130,53 @@ console.log(
   '目标绑定右手位置仍为 ['
   + fmt(new Vector3().setFromMatrixPosition(targetSkeleton.bindWorldMatrix('j_handR')).toArray())
   + ']（重定向不改写骨架输入）。',
+);
+
+// 导出三角网格与烘焙后的重定向片段；GLB 只有一个内嵌 BIN buffer，不引用外部文件。
+const glbPositions: Vec3[] = [
+  [0.3, 0.85, 0],
+  [0.38, 0.85, 0],
+  [0.34, 0.93, 0],
+];
+const glbWeights: SkinInfluence[][] = glbPositions.map(() => [{ boneId: 'j_handR', weight: 1 }]);
+const glb = exportCharacterGlb(
+  targetSkeleton,
+  { name: 'retarget-target', positions: glbPositions, indices: [0, 1, 2], weights: glbWeights },
+  [baked],
+);
+
+const loadedGlb = await new Promise<any>((resolve, reject) => {
+  new GLTFLoader().parse(glb.slice(0), '', resolve, reject);
+});
+const mixer = new AnimationMixer(loadedGlb.scene);
+mixer.clipAction(loadedGlb.animations[0]).play();
+mixer.update(0.5);
+loadedGlb.scene.updateMatrixWorld(true);
+
+const loadedSkinned = loadedGlb.scene.children.find((child: any) => child.isSkinnedMesh);
+loadedSkinned.skeleton.update();
+const expectedAtHalf = skinVertices(
+  targetSkeleton,
+  glbPositions,
+  glbWeights,
+  computeWorldMatrices(targetSkeleton, sampleClip(baked, targetSkeleton, 0.5, 'once')),
+);
+const loadedPosition = new Vector3();
+for (let slot = 0; slot < 4; slot++) {
+  const joint = loadedSkinned.geometry.attributes.skinIndex.array[slot] as number;
+  const weight = loadedSkinned.geometry.attributes.skinWeight.array[slot] as number;
+  if (weight === 0) continue;
+  const matrix = new Matrix4().fromArray(
+    Array.from(loadedSkinned.skeleton.boneMatrices.slice(joint * 16, joint * 16 + 16)),
+  );
+  loadedPosition.addScaledVector(new Vector3(...glbPositions[0]).applyMatrix4(matrix), weight);
+}
+const loadedError = loadedPosition.distanceTo(new Vector3(...expectedAtHalf[0]));
+if (loadedError > 1e-5 || loadedGlb.animations[0].name !== 'walk-retarget') {
+  throw new Error('GLTFLoader 播放验证失败，蒙皮误差=' + loadedError);
+}
+
+console.log(
+  '\nGLB 导出/加载验证通过：' + glb.byteLength + ' bytes，片段 '
+  + loadedGlb.animations[0].name + ' 在 t=0.5 的蒙皮误差=' + loadedError.toExponential(1) + '。',
 );

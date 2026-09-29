@@ -76,6 +76,25 @@ export interface SkinInfluence {
   readonly weight: number;
 }
 
+/** 绑定姿态角色空间中的三角网格。 */
+export interface TriangleMesh {
+  /** 可选网格名称，会写入 glTF node/mesh 名称。 */
+  readonly name?: string;
+  /** 绑定姿态顶点位置。 */
+  readonly positions: readonly Vec3[];
+  /** 三角形索引；长度必须为 3 的倍数。 */
+  readonly indices: readonly number[];
+  /** 与 positions 一一对应的蒙皮权重；每顶点至少一个、至多四个非零影响。 */
+  readonly weights: readonly (readonly SkinInfluence[])[];
+}
+
+/** 可导出的骨骼蒙皮角色资产。 */
+export interface GlbCharacterAsset {
+  readonly skeleton: import('./skeleton.js').Skeleton;
+  readonly mesh: TriangleMesh;
+  readonly clips: readonly AnimationClip[];
+}
+
 /** 两骨骼 IK 链：rootJoint -> middleJoint -> endJoint，必须直接相连。 */
 export interface TwoBoneIkChain {
   readonly rootJointId: string;
