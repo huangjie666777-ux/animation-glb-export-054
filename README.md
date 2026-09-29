@@ -1,6 +1,6 @@
 # Skeletal Animation 038
 
-TypeScript 5.8 + Three.js 0.180 的可复用骨骼动画库：分层混合（基础层 + 遮罩覆盖层）、根运动播放实例（循环行走推进角色）、混合后两骨骼 IK（角色空间与世界固定目标）末端贴合、CPU 线性蒙皮（角色/世界输出），以及跨骨架**动作重定向**（不同骨名、绑定朝向、骨长复用同一动作，目标可插入未映射中间骨）。
+TypeScript 5.8 + Three.js 0.180 的可复用骨骼动画库：分层混合（基础层 + 遮罩覆盖层）、根运动播放实例（循环行走推进角色）、混合后两骨骼 IK（角色空间与世界固定目标）末端贴合、CPU 线性蒙皮（角色/世界输出），跨骨架**动作重定向**（不同骨名、绑定朝向、骨长复用同一动作，目标可插入未映射中间骨），以及自包含 **glTF 2.0 GLB 资产导出**（骨架 + 绑定网格 + 多个动画片段，可直接交给其他三维工具）。
 
 ## 命令
 
@@ -9,6 +9,7 @@ TypeScript 5.8 + Three.js 0.180 的可复用骨骼动画库：分层混合（基
 - `npm run example` — 运行“行走 + 局部挥手 + 右手 IK 贴合”示例，打印混合姿态、IK 结果与变形顶点
 - `npm run example:target` — 运行“循环根运动行走 + 手部贴合固定世界目标 + 世界蒙皮”完整示例
 - `npm run example:retarget` — 运行“源片段重定向到异构目标骨架 + 根运动播放 + 世界 IK + 世界蒙皮”完整示例
+- `npm run example:export-glb` — 运行“重定向烘焙 → GLB 导出 → GLTFLoader 加载播放并逐点校验蒙皮”完整示例
 
 ## 数据约定
 
@@ -28,6 +29,10 @@ TypeScript 5.8 + Three.js 0.180 的可复用骨骼动画库：分层混合（基
   - 姿态转换：映射骨的旋转差为「源当前全局旋转 × 源绑定全局旋转⁻¹」，再左乘目标绑定全局旋转得到目标当前全局旋转，按目标当前父全局旋转还原局部旋转；因此源绑定姿态必定映成目标绑定姿态，且目标自身的绑定朝向偏移被保留。未映射骨保留目标绑定局部旋转，但按目标求值顺序继承已运动父级的全局旋转。非根平移与缩放恒保留目标绑定值（目标骨长不变）。
   - 根运动：根旋转同样按映射规则转换；根平移 = 目标绑定根位置 +（源当前根位置 − 源绑定根位置）× `rootTranslationScale`（有限正倍率，缺省 1），根缩放保留目标绑定值。`retargetPose` 返回全新 `Map`，后续转换不会改写先前结果。
   - 片段烘焙：`bakeRetargetedClip(plan, sourceClip, { sampleTimes, rootTranslationScale, name })` 按调用方给定的**严格递增**采样时刻烘焙，时刻必须从 0 开始并以源片段时长结束（含两端）；终点按末帧直接采样，不会折回首帧。输出片段时长与源相同，轨道使用目标骨 ID（映射骨旋转轨道 + 根平移轨道，无非根平移/缩放轨道），采样点姿态与逐点 `retargetPose` 完全一致，可直接交给现有 `RootMotionPlayer` 播放根运动。
+- **GLB 导出**（`exportGlb`）：`exportGlb({ skeleton, mesh: { vertices, indices, weights }, clips, name })` 返回自包含 glTF 2.0 的 `ArrayBuffer`（单个内嵌 BIN 缓冲，不引用任何外部文件；不含材质/贴图）。
+  - 骨架与皮肤：关节节点按骨架求值顺序排列（输入骨骼可乱序），完整保留层级与绑定局部 TRS；`skin.joints` 顺序、逆绑定矩阵（列主序 MAT4）与顶点 `JOINTS_0/WEIGHTS_0` 序号严格一致。网格节点置于场景根（单位绑定矩阵），顶点为绑定姿态角色空间位置，索引为 `UNSIGNED_INT` 三角形。每顶点至多 4 项影响，导出时按总和归一化；拒绝未知骨骼、负权重、零总权重、非有限顶点/权重与越界三角索引；全程不修改输入。
+  - 动画通道：每个 `AnimationClip` 输出一个 glTF animation，保留片段名称与完整时长；平移/缩放为线性，旋转为 glTF LINEAR 球面插值并逐帧选取同号半球（与库最短弧 `slerp` 一致）。仅导出片段中存在的通道，缺失通道由关节节点的静态绑定 TRS 表达；采样器在首/尾关键帧未覆盖 `0` 与 `duration` 时显式补端值，因此导入后端值自动延续、末帧完整保留、终点不会折回零。根运动片段导出的是片段自身的局部轨道，不会把播放实例的世界位移再次叠加。
+  - 规范与验证：访问器/缓冲视图均 4 字节对齐，顶点属性带 `byteStride`，JSON 与 BIN 分块长度按规范填充对齐。`test/glb-export.test.ts` 校验分块/节点/皮肤引用与各类非法输入，并用 Three.js `GLTFLoader` + `AnimationMixer` 回环加载，逐时刻比对加载后蒙皮结果与本库 `skinVertices`（Float32 精度内一致）。
 
 ## 快速上手
 
@@ -114,6 +119,26 @@ const player = new RootMotionPlayer({
 
 完整示例见 `examples/retarget.ts`（`npm run example:retarget`）。
 
+把（重定向烘焙后的）目标片段连同绑定网格导出为 GLB，供其他三维工具离线使用：
+
+```ts
+import { exportGlb, bakeRetargetedClip } from './dist/index.js';
+
+const targetClip = bakeRetargetedClip(plan, sourceClip, {
+  sampleTimes: [0, 0.25, 0.5, 0.75, 1],
+  rootTranslationScale: 0.75,
+});
+const glb = exportGlb({
+  skeleton: targetSkeleton,
+  mesh: { vertices, indices, weights }, // 绑定姿态角色空间三角网格
+  clips: [targetClip, anotherClip],    // 缺失通道自动回退绑定值
+});
+// glb 为 ArrayBuffer：可写盘为 .glb，或直接交给 GLTFLoader.parse()
+```
+
+完整示例见 `examples/export-retarget-glb.ts`（`npm run example:export-glb`）：该示例不使用本库播放器，
+而是用 Three.js `GLTFLoader`/`AnimationMixer` 加载导出的 GLB 并逐点验证蒙皮一致性。
+
 ## 目录
 
 - `src/types.ts` — 公共类型
@@ -129,4 +154,8 @@ const player = new RootMotionPlayer({
 - `src/retarget-plan.ts` — 重定向计划：映射/骨架校验与绑定全局旋转预计算
 - `src/retarget-pose.ts` — 完整源局部姿态到完整目标局部姿态的层级转换
 - `src/retarget-clip.ts` — 源片段按指定时刻烘焙为目标 `AnimationClip`
+- `src/skin-mesh-data.ts` — 网格/权重校验、归一化与关节序号打包
+- `src/gltf-animation.ts` — 动画片段到 glTF 通道/采样器（端值延续、最短弧）
+- `src/glb-builder.ts` — glTF 2.0 JSON、访问器/缓冲对齐与 GLB 分块编码
+- `src/export-glb.ts` — 骨架/皮肤/网格/动画的自包含 GLB 导出编排
 - `src/index.ts` — 统一导出入口

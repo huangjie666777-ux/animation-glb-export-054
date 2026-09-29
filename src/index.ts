@@ -21,6 +21,8 @@ export type {
   RetargetBoneMapping,
   RetargetPlanOptions,
   RetargetBakeOptions,
+  SkinMesh,
+  GlbExportOptions,
 } from './types.js';
 export { Skeleton, composeLocalMatrix, computeWorldMatrices } from './skeleton.js';
 export { validateClip, sampleKeys } from './clip.js';
@@ -49,3 +51,4 @@ export { skinVerticesToWorld } from './world-skin.js';
 export { RetargetPlan, bindWorldRotation } from './retarget-plan.js';
 export { retargetPose } from './retarget-pose.js';
 export { bakeRetargetedClip } from './retarget-clip.js';
+export { exportGlb } from './export-glb.js';

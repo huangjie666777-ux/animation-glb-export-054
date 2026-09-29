@@ -7,3 +7,6 @@ coverage/
 .env.*
 *.pem
 *.key
+retarget-character.glb
+debug-glb.mjs
+debug2.mjs

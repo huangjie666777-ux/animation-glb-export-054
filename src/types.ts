@@ -203,3 +203,26 @@ export interface RetargetBakeOptions {
   /** 源片段循环模式；缺省 'loop'。仅影响采样时刻的解释。 */
   readonly loop?: LoopMode;
 }
+
+/** 导出 GLB 用的绑定姿态三角网格（角色空间）。 */
+export interface SkinMesh {
+  /** 绑定姿态角色空间顶点位置。 */
+  readonly vertices: readonly Vec3[];
+  /**
+   * 三角索引：长度为 3 的倍数；每 3 个索引构成一个三角形。
+   * 索引必须指向有效顶点。
+   */
+  readonly indices: readonly number[];
+  /** 每个顶点至多 4 项骨骼影响；按顶点顺序排列，总权重必须为正。 */
+  readonly weights: readonly (readonly SkinInfluence[])[];
+}
+
+/** 导出自包含 glTF 2.0 GLB 的参数。 */
+export interface GlbExportOptions {
+  readonly skeleton: import('./skeleton.js').Skeleton;
+  readonly mesh: SkinMesh;
+  /** 一个或多个既有 AnimationClip；缺失通道按绑定值静态输出。 */
+  readonly clips: readonly AnimationClip[];
+  /** 可选资产/网格名称（写入 glTF name 字段）。 */
+  readonly name?: string;
+}
